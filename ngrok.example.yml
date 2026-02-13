@@ -1,5 +1,5 @@
 version: "2"
-authtoken: YOUR_NGROK_AUTHTOKEN_HERE
+authtoken: "YOUR_NGROK_AUTHTOKEN_HERE"
 tunnels:
   n8n:
     proto: http

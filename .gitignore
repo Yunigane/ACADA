@@ -1,1 +1,23 @@
-node_modules/\n.env\n*.log
+# Dependencies
+node_modules/
+dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# n8n
+.n8n/
+*.log
+
+# Sensitive Configs
+ngrok.yml
+*.key
+*.pem
+credentials.json
+
