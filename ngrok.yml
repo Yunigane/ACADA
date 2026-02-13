@@ -1,0 +1,6 @@
+version: "2"
+authtoken: 399wywIP7yAFYItnGahXs17rtbF_JXii3KgyghhBYaMkvGMg
+tunnels:
+  n8n:
+    proto: http
+    addr: 5679

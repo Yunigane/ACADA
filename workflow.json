@@ -1,0 +1,231 @@
+{
+    "name": "Automated Code Auditor & Documentation Agent",
+    "nodes": [
+        {
+            "parameters": {
+                "authentication": "none",
+                "httpMethod": "POST",
+                "path": "github-webhook",
+                "responseMode": "onReceived",
+                "options": {}
+            },
+            "id": "github-webhook-trigger",
+            "name": "GitHub Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Extract repository and commit details\nreturn items.map(item => {\n  const payload = item.json;\n  const owner = payload.repository.owner.login;\n  const repo = payload.repository.name;\n  const commit = payload.head_commit.id;\n  const modifiedFiles = payload.head_commit.modified.filter(f => f.endsWith('.py'));\n  const addedFiles = payload.head_commit.added.filter(f => f.endsWith('.py'));\n  return { \n    json: { \n      owner, \n      repo, \n      commit, \n      files: [...modifiedFiles, ...addedFiles] \n    } \n  };\n});"
+            },
+            "id": "code-extract-details",
+            "name": "Extract Details",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 1,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "fieldToSplitOut": "files",
+                "options": {}
+            },
+            "id": "split-files",
+            "name": "Split Files",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://raw.githubusercontent.com/{{$node[\"Extract Details\"].json[\"owner\"]}}/{{$node[\"Extract Details\"].json[\"repo\"]}}/{{$node[\"Extract Details\"].json[\"commit\"]}}/{{$json[\"files\"]}}",
+                "options": {}
+            },
+            "id": "fetch-raw-content",
+            "name": "Fetch Raw Content",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "language": "python",
+                "pythonCode": "import ast\n\ndef extract_logic(code_content):\n    try:\n        tree = ast.parse(code_content)\n    except SyntaxError:\n        return \"\"\n\n    logic_nodes = []\n    for node in tree.body:\n        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):\n            try:\n                logic_nodes.append(ast.unparse(node))\n            except AttributeError:\n                pass\n    return \"\\n\\n\".join(logic_nodes)\n\n# Accessing data from incoming item\ndata = _['data'] if 'data' in _ else \"\"\nfilename = _['files'] if 'files' in _ else \"unknown.py\"\n\nreturn [{\n    \"json\": {\n        \"original_content\": data,\n        \"extracted_logic\": extract_logic(data),\n        \"filename\": filename\n    }\n}]"
+            },
+            "id": "python-ast-extraction",
+            "name": "Python AST Extraction",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 1,
+            "position": [
+                1050,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gemini-pro",
+                "prompt": "=Generate Google-style docstrings for the following Python code. Output ONLY the updated code with docstrings included. Do not include any conversational fluff or markdown formatting around the code block.\n\nCODE:\n{{$json[\"extracted_logic\"]}}",
+                "options": {}
+            },
+            "id": "gemini-ai-agent",
+            "name": "Gemini AI Agent",
+            "type": "n8n-nodes-base.googleGemini",
+            "typeVersion": 1,
+            "position": [
+                1250,
+                300
+            ],
+            "credentials": {
+                "googleGeminiApi": {
+                    "id": "your-gemini-credential-id",
+                    "name": "Gemini Account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "resource": "file",
+                "operation": "edit",
+                "owner": "={{$node[\"Extract Details\"].json[\"owner\"]}}",
+                "repository": "={{$node[\"Extract Details\"].json[\"repo\"]}}",
+                "filePath": "={{$node[\"Python AST Extraction\"].json[\"filename\"]}}",
+                "fileContent": "={{$json[\"text\"]}}",
+                "branch": "=docs/audit-{{$node[\"Extract Details\"].json[\"commit\"].substring(0,7)}}",
+                "commitMessage": "=Automated documentation update for {{$node[\"Python AST Extraction\"].json[\"filename\"]}}"
+            },
+            "id": "github-update-file",
+            "name": "GitHub Update File",
+            "type": "n8n-nodes-base.github",
+            "typeVersion": 1,
+            "position": [
+                1450,
+                300
+            ],
+            "credentials": {
+                "githubApi": {
+                    "id": "your-github-credential-id",
+                    "name": "GitHub Account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "resource": "pullRequest",
+                "operation": "create",
+                "owner": "={{$node[\"Extract Details\"].json[\"owner\"]}}",
+                "repository": "={{$node[\"Extract Details\"].json[\"repo\"]}}",
+                "title": "=Code Audit & Documentation: {{$node[\"Extract Details\"].json[\"commit\"].substring(0,7)}}",
+                "head": "=docs/audit-{{$node[\"Extract Details\"].json[\"commit\"].substring(0,7)}}",
+                "base": "main",
+                "body": "This Pull Request was automatically generated by the Code Auditor Agent.\n\nChanges included:\n- Added Google-style docstrings to Python functions and classes.\n- Improved code documentation using Gemini AI."
+            },
+            "id": "github-create-pr",
+            "name": "GitHub Create PR",
+            "type": "n8n-nodes-base.github",
+            "typeVersion": 1,
+            "position": [
+                1650,
+                300
+            ],
+            "credentials": {
+                "githubApi": {
+                    "id": "your-github-credential-id",
+                    "name": "GitHub Account"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "GitHub Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Extract Details",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Extract Details": {
+            "main": [
+                [
+                    {
+                        "node": "Split Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Files": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch Raw Content",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Raw Content": {
+            "main": [
+                [
+                    {
+                        "node": "Python AST Extraction",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Python AST Extraction": {
+            "main": [
+                [
+                    {
+                        "node": "Gemini AI Agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Gemini AI Agent": {
+            "main": [
+                [
+                    {
+                        "node": "GitHub Update File",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "GitHub Update File": {
+            "main": [
+                [
+                    {
+                        "node": "GitHub Create PR",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {}
+}
