@@ -1,6 +1,0 @@
-version: "2"
-authtoken: YOUR_NGROK_AUTHTOKEN_HERE
-tunnels:
-  n8n:
-    proto: http
-    addr: 5679
